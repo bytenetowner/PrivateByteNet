@@ -10,8 +10,8 @@ Library.ForceCheckbox = false
 Library.ShowToggleFrameInKeybinds = true
 
 local Window = Library:CreateWindow({
-    Title = "no1s Hub",
-    Footer = "v2.1",
+    Title = "sharedbyte's Hub",
+    Footer = "v2.5",
     Icon = 95816097006870,
     NotifySide = "Right",
 	ShowCustomCursor = false,
@@ -23,84 +23,79 @@ local UsageBox = GenTab:AddLeftGroupbox("Generators", "battery-charging")
 
 local GenSettingsBox = GenTab:AddRightGroupbox("Settings", "file-cog")
 
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local player = game:GetService("Players").LocalPlayer
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local SolveDelaySlider = GenSettingsBox:AddSlider("SolveDelay", {
 	Text = "Solve Delay",
 	Default = 7.5,
 	Min = 0,
 	Max = 15,
-	Rounding = 0,
+	Rounding = 1,
 })
 
-local lastFire = 0
-local active = false
-local connection
+local RandomizationSlider = GenSettingsBox:AddSlider("Randomization", {
+	Text = "Randomization",
+	Default = 0.5,
+	Min = 0,
+	Max = 5,
+	Rounding = 2,
+})
 
-local function FindAllGeneratorPuzzles()
-	local puzzles = {}
-	for _, gen in ipairs(player.PlayerGui:GetChildren()) do
-		if gen.Name == "generatorpuzzle" then
-			table.insert(puzzles, gen)
+local AutoPuzzleEnabled = false
+local ActivePuzzles = {}
+
+local function SolvePuzzle(Puzzle)
+	local Range = RandomizationSlider.Value
+	local RandomOffset = math.random(-Range * 10, Range * 10) / 10
+	local FinalDelay = math.max(0, SolveDelaySlider.Value + RandomOffset)
+	
+	local StartTime = tick()
+	local Connection
+	
+	Connection = RunService.Heartbeat:Connect(function()
+		if not AutoPuzzleEnabled or not Puzzle:IsDescendantOf(PlayerGui) then
+			Connection:Disconnect()
+			ActivePuzzles[Puzzle] = nil
+			return
 		end
-	end
-	return puzzles
-end
-
-local function FirePuzzleEvents()
-	for _, gen in ipairs(FindAllGeneratorPuzzles()) do
-		local localScript = gen:FindFirstChild("LocalScript")
-		if localScript then
-			local event = localScript:FindFirstChild("Event")
-			if event then
-				event:Fire(true)
+		
+		if tick() - StartTime >= FinalDelay then
+			local Event = Puzzle:FindFirstChild("Event")
+			if Event then
+				Event:Fire(true)
 			end
-		end
-	end
-end
-
-local function StartSolvingLoop()
-	if connection then connection:Disconnect() end
-
-	connection = RunService.RenderStepped:Connect(function()
-		local puzzles = FindAllGeneratorPuzzles()
-		if #puzzles > 0 then
-			if not active then
-				active = true
-				lastFire = tick()
-			end
-
-			local delay = SolveDelaySlider.Value
-			if tick() - lastFire >= delay then
-				FirePuzzleEvents()
-				lastFire = tick()
-			end
-		else
-			active = false
+			Connection:Disconnect()
+			ActivePuzzles[Puzzle] = nil
 		end
 	end)
+	
+	ActivePuzzles[Puzzle] = Connection
 end
 
-local function StopSolvingLoop()
-	if connection then
-		connection:Disconnect()
-		connection = nil
+local function OnChildAdded(Child)
+	if AutoPuzzleEnabled and Child.Name == "generatorpuzzle" and not ActivePuzzles[Child] then
+		SolvePuzzle(Child)
 	end
-	active = false
 end
 
 local EnabledGenSolving = UsageBox:AddToggle("AutoGenMinigame", {
 	Text = "Auto Puzzle",
 	Default = false,
-	Callback = function(state)
-		if state then
-			StartSolvingLoop()
-		else
-			StopSolvingLoop()
+	Callback = function(State)
+		AutoPuzzleEnabled = State
+		if State then
+			for _, Child in ipairs(PlayerGui:GetChildren()) do
+				OnChildAdded(Child)
+			end
 		end
 	end,
 })
+
+PlayerGui.ChildAdded:Connect(OnChildAdded)
 
 VisualsTab = Window:AddTab("Visuals", "lightbulb")
 
@@ -425,25 +420,41 @@ local GenESP = ESPBox:AddToggle("GenESP", {
 local EffectsBox = VisualsTab:AddRightGroupbox("Effects", "zap")
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
 local LocalPlayer = Players.LocalPlayer
 
-local defaultMinZoom = LocalPlayer.CameraMinZoomDistance
-local defaultMaxZoom = LocalPlayer.CameraMaxZoomDistance
+local HigherSightEnabled = false
+local TargetZoom = 27
+local DefaultMin = 0.5
+local DefaultMax = 10
+
+local function MaintainZoom()
+	if HigherSightEnabled then
+		if LocalPlayer.CameraMaxZoomDistance ~= TargetZoom then
+			LocalPlayer.CameraMaxZoomDistance = TargetZoom
+		end
+		if LocalPlayer.CameraMinZoomDistance ~= TargetZoom then
+			LocalPlayer.CameraMinZoomDistance = TargetZoom
+		end
+	else
+		if LocalPlayer.CameraMaxZoomDistance ~= DefaultMax then
+			LocalPlayer.CameraMaxZoomDistance = DefaultMax
+		end
+		if LocalPlayer.CameraMinZoomDistance ~= DefaultMin then
+			LocalPlayer.CameraMinZoomDistance = DefaultMin
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(MaintainZoom)
 
 local HigherSightToggle = EffectsBox:AddToggle("HigherSightOption", {
-    Text = "Higher Sight View",
-    Default = false,
-    Callback = function(state)
-        if state then
-            defaultMinZoom = LocalPlayer.CameraMinZoomDistance
-            defaultMaxZoom = LocalPlayer.CameraMaxZoomDistance
-            LocalPlayer.CameraMaxZoomDistance = 19
-            LocalPlayer.CameraMinZoomDistance = 19
-        else
-            LocalPlayer.CameraMaxZoomDistance = 10
-            LocalPlayer.CameraMinZoomDistance = 0.5
-        end
-    end,
+	Text = "Higher Sight View",
+	Default = false,
+	Callback = function(State)
+		HigherSightEnabled = State
+	end,
 })
 
 PlayerTab = Window:AddTab("Player", "users")
@@ -561,56 +572,65 @@ local KillerSprintSlider=PlayerBox:AddSlider("KillerSprintSlider",{
     Callback=function(v) killerSprintSpeed=v end
 })
 
-local players = game:GetService("Players")
-local runservice = game:GetService("RunService")
-local replicatedstorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local localplayer = players.LocalPlayer
-local connection
-local charconn
+local LocalPlayer = Players.LocalPlayer
+local RenderConnection
+local CharacterConnection
 
-local keywords = {"liverblow","corrodedwave","slash","spear","shotgun","syringe","flloop","m1","m1-1","m1-2","m2"}
-local keywordids = {}
+local Keywords = {"liverblow", "corrodedwave", "slash", "spear", "shotgun", "syringe", "flloop", "m1", "m1-1", "m1-2", "m2", "sand"}
+local KeywordIds = {}
 
-local function collect_ids(folder)
-	for _, child in ipairs(folder:GetChildren()) do
-		if child:IsA("Animation") then
-			local name = child.Name:lower()
-			for _, k in ipairs(keywords) do
-				if name == k then
-					table.insert(keywordids, child.AnimationId)
+local RotationSpeedSlider = AimbotBox:AddSlider("RotationSmoothing", {
+	Text = "Rotation Speed",
+	Default = 0.15,
+	Min = 0.01,
+	Max = 1,
+	Rounding = 2,
+})
+
+local function CollectIds(Folder)
+	for _, Child in ipairs(Folder:GetChildren()) do
+		if Child:IsA("Animation") then
+			local Name = Child.Name:lower()
+			for _, Key in ipairs(Keywords) do
+				if Name == Key then
+					table.insert(KeywordIds, Child.AnimationId)
 				end
 			end
 		end
-		if #child:GetChildren() > 0 then
-			collect_ids(child)
+		if #Child:GetChildren() > 0 then
+			CollectIds(Child)
 		end
 	end
 end
 
-collect_ids(replicatedstorage)
+CollectIds(ReplicatedStorage)
 
-local function nearest_target(origin, container)
-	local hrp = origin:FindFirstChild("HumanoidRootPart")
-	if not hrp then return nil end
-	local closest, shortest = nil, math.huge
-	for _, target in ipairs(container:GetChildren()) do
-		local thrp = target:FindFirstChild("HumanoidRootPart")
-		if thrp then
-			local d = (thrp.Position - hrp.Position).Magnitude
-			if d < shortest then
-				shortest = d
-				closest = target
+local function GetNearestTarget(Origin, Container)
+	local Hrp = Origin:FindFirstChild("HumanoidRootPart")
+	if not Hrp then return nil end
+	
+	local Closest, Shortest = nil, math.huge
+	for _, Target in ipairs(Container:GetChildren()) do
+		local Thrp = Target:FindFirstChild("HumanoidRootPart")
+		if Thrp then
+			local Distance = (Thrp.Position - Hrp.Position).Magnitude
+			if Distance < Shortest then
+				Shortest = Distance
+				closest = Target
 			end
 		end
 	end
 	return closest
 end
 
-local function is_keyword_playing(humanoid)
-	for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-		for _, id in ipairs(keywordids) do
-			if track.Animation.AnimationId == id then
+local function IsAttackPlaying(Humanoid)
+	for _, Track in ipairs(Humanoid:GetPlayingAnimationTracks()) do
+		for _, Id in ipairs(KeywordIds) do
+			if Track.Animation.AnimationId == Id then
 				return true
 			end
 		end
@@ -618,47 +638,52 @@ local function is_keyword_playing(humanoid)
 	return false
 end
 
-local function face_target(character)
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not humanoid or not hrp then return end
-	if not is_keyword_playing(humanoid) then return end
-	local targetcontainer = character:IsDescendantOf(workspace.survivors) and workspace.killers or workspace.survivors
-	local target = nearest_target(character, targetcontainer)
-	if not target then return end
-	local thrp = target:FindFirstChild("HumanoidRootPart")
-	if not thrp then return end
-	local look = Vector3.new(thrp.Position.X, hrp.Position.Y, thrp.Position.Z)
-	hrp.CFrame = CFrame.new(hrp.Position, look)
+local function FaceTargetSmoothly(Character)
+	local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+	local Hrp = Character:FindFirstChild("HumanoidRootPart")
+	if not Humanoid or not Hrp then return end
+	if not IsAttackPlaying(Humanoid) then return end
+	
+	local TargetContainer = Character:IsDescendantOf(workspace.survivors) and workspace.killers or workspace.survivors
+	local Target = GetNearestTarget(Character, TargetContainer)
+	if not Target then return end
+	
+	local Thrp = Target:FindFirstChild("HumanoidRootPart")
+	if not Thrp then return end
+	
+	local TargetLook = Vector3.new(Thrp.Position.X, Hrp.Position.Y, Thrp.Position.Z)
+	local TargetCFrame = CFrame.new(Hrp.Position, TargetLook)
+	
+	Hrp.CFrame = Hrp.CFrame:Lerp(TargetCFrame, RotationSpeedSlider.Value)
 end
 
-local function start_autorotate(character)
-	if connection then connection:Disconnect() end
-	connection = runservice.RenderStepped:Connect(function()
-		if not character:IsDescendantOf(workspace) then return end
-		face_target(character)
+local function StartAutoRotate(Character)
+	if RenderConnection then RenderConnection:Disconnect() end
+	RenderConnection = RunService.RenderStepped:Connect(function()
+		if not Character:IsDescendantOf(workspace) then return end
+		FaceTargetSmoothly(Character)
 	end)
 end
 
-local function stop_autorotate()
-	if connection then connection:Disconnect() connection = nil end
-	if charconn then charconn:Disconnect() charconn = nil end
+local function StopAutoRotate()
+	if RenderConnection then RenderConnection:Disconnect() RenderConnection = nil end
+	if CharacterConnection then CharacterConnection:Disconnect() CharacterConnection = nil end
 end
 
 AimbotBox:AddToggle("autorotate", {
 	Text = "Survivor & Killer",
 	Default = false,
-	Callback = function(state)
-		if state then
-			if localplayer.Character then
-				start_autorotate(localplayer.Character)
+	Callback = function(State)
+		if State then
+			if LocalPlayer.Character then
+				StartAutoRotate(LocalPlayer.Character)
 			end
-			if charconn then charconn:Disconnect() end
-			charconn = localplayer.CharacterAdded:Connect(function(char)
-				start_autorotate(char)
+			if CharacterConnection then CharacterConnection:Disconnect() end
+			CharacterConnection = LocalPlayer.CharacterAdded:Connect(function(Char)
+				StartAutoRotate(Char)
 			end)
 		else
-			stop_autorotate()
+			StopAutoRotate()
 		end
 	end,
 })
