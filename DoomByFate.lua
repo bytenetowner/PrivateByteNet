@@ -101,188 +101,152 @@ VisualsTab = Window:AddTab("Visuals", "lightbulb")
 
 local ESPBox = VisualsTab:AddLeftGroupbox("ESP n Stuff", "siren")
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
+local players = game:GetService("Players")
+local runservice = game:GetService("RunService")
+local camera = workspace.CurrentCamera
 local survivors = workspace:WaitForChild("survivors")
 
-local LocalPlayer = Players.LocalPlayer
-local ESP = {}
+local localplayer = players.LocalPlayer
+local esp = {}
 local connection
 
-local function createESP(player)
-    if player == LocalPlayer then return end
-    if ESP[player] then return end
+local function createesp(player)
+	if player == localplayer or esp[player] then return end
 
-    local name = Drawing.new("Text")
-    name.Center = true
-    name.Outline = true
-    name.Size = 16
-    name.Visible = false
+	local name = Drawing.new("Text")
+	name.Center = true
+	name.Outline = true
+	name.Size = 12
+	name.Visible = false
 
-    local distText = Drawing.new("Text")
-    distText.Center = true
-    distText.Outline = true
-    distText.Size = 16
-    distText.Visible = false
+	local disttext = Drawing.new("Text")
+	disttext.Center = true
+	disttext.Outline = true
+	disttext.Size = 12
+	disttext.Visible = false
 
-    local corners = {}
-    for i = 1, 8 do
-        local line = Drawing.new("Line")
-        line.Thickness = 1
-        line.Visible = false
-        corners[i] = line
-    end
+	local corners = {}
+	for i = 1, 8 do
+		local line = Drawing.new("Line")
+		line.Thickness = 1
+		line.Visible = false
+		corners[i] = line
+	end
 
-    local healthBar = Drawing.new("Line")
-    healthBar.Thickness = 1
-    healthBar.Visible = false
+	local healthbar = Drawing.new("Line")
+	healthbar.Thickness = 1.5
+	healthbar.Visible = false
 
-    ESP[player] = {
-        Name = name,
-        Distance = distText,
-        Corners = corners,
-        HealthBar = healthBar
-    }
+	esp[player] = {
+		name = name,
+		distance = disttext,
+		corners = corners,
+		healthbar = healthbar
+	}
 end
 
-local function removeESP(player)
-    if not ESP[player] then return end
-    ESP[player].Name:Remove()
-    ESP[player].Distance:Remove()
-    ESP[player].HealthBar:Remove()
-    for _, c in ipairs(ESP[player].Corners) do c:Remove() end
-    ESP[player] = nil
+local function removeesp(player)
+	if not esp[player] then return end
+	esp[player].name:Remove()
+	esp[player].distance:Remove()
+	esp[player].healthbar:Remove()
+	for _, c in ipairs(esp[player].corners) do c:Remove() end
+	esp[player] = nil
 end
 
-Players.PlayerAdded:Connect(function(player)
-    if player ~= LocalPlayer then
-        createESP(player)
-    end
+local function updatevisibility(data, state)
+	data.name.Visible = state
+	data.distance.Visible = state
+	data.healthbar.Visible = state
+	for _, c in ipairs(data.corners) do c.Visible = state end
+end
+
+players.PlayerAdded:Connect(function(player)
+	if player ~= localplayer then createesp(player) end
 end)
 
-Players.PlayerRemoving:Connect(removeESP)
+players.PlayerRemoving:Connect(removeesp)
 
-for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then
-        createESP(p)
-    end
+for _, p in ipairs(players:GetPlayers()) do
+	if p ~= localplayer then createesp(p) end
 end
 
-local function StartESP()
-    if connection then connection:Disconnect() end
-    connection = RunService.RenderStepped:Connect(function()
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player == LocalPlayer then continue end
-            local data = ESP[player]
-            if not data then continue end
+local function startesp()
+	if connection then connection:Disconnect() end
+	connection = runservice.RenderStepped:Connect(function()
+		for _, player in ipairs(players:GetPlayers()) do
+			local data = esp[player]
+			if data then
+				local char = player.Character
+				local hum = char and char:FindFirstChild("Humanoid")
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
-            local char = player.Character
-            local hum = char and char:FindFirstChild("Humanoid")
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not char or not hum or not hrp then
-                data.Name.Visible = false
-                data.Distance.Visible = false
-                data.HealthBar.Visible = false
-                for _, c in ipairs(data.Corners) do c.Visible = false end
-                continue
-            end
+				if char and hum and hrp then
+					local pos, onscreen = camera:WorldToViewportPoint(hrp.Position)
+					local mag = (camera.CFrame.Position - hrp.Position).Magnitude
 
-            local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-            if not onScreen then
-                data.Name.Visible = false
-                data.Distance.Visible = false
-                data.HealthBar.Visible = false
-                for _, c in ipairs(data.Corners) do c.Visible = false end
-                continue
-            end
+					if onscreen and mag <= 2000 then
+						local color = survivors:FindFirstChild(player.Name) and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+						local size = math.clamp(3000 / mag, 20, 300)
+						local w, h = size, size * 1.8
+						local topleft = Vector2.new(pos.X - w / 2, pos.Y - h / 2)
+						local topright = Vector2.new(pos.X + w / 2, pos.Y - h / 2)
+						local bottomleft = Vector2.new(pos.X - w / 2, pos.Y + h / 2)
+						local bottomright = Vector2.new(pos.X + w / 2, pos.Y + h / 2)
+						local len = w * 0.25
 
-            local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
-            if distance > 2000 then
-                data.Name.Visible = false
-                data.Distance.Visible = false
-                data.HealthBar.Visible = false
-                for _, c in ipairs(data.Corners) do c.Visible = false end
-                continue
-            end
+						local c = data.corners
+						c[1].From = topleft; c[1].To = topleft + Vector2.new(len, 0)
+						c[2].From = topleft; c[2].To = topleft + Vector2.new(0, len)
+						c[3].From = topright; c[3].To = topright - Vector2.new(len, 0)
+						c[4].From = topright; c[4].To = topright + Vector2.new(0, len)
+						c[5].From = bottomleft; c[5].To = bottomleft + Vector2.new(len, 0)
+						c[6].From = bottomleft; c[6].To = bottomleft + Vector2.new(0, -len)
+						c[7].From = bottomright; c[7].To = bottomright - Vector2.new(len, 0)
+						c[8].From = bottomright; c[8].To = bottomright - Vector2.new(0, -len)
 
-            local color = survivors:FindFirstChild(player.Name)
-                and Color3.fromRGB(0,255,0)
-                or Color3.fromRGB(255,0,0)
+						for _, ln in ipairs(c) do
+							ln.Color = color
+							ln.Visible = true
+						end
 
-            local size = math.clamp(3000 / distance, 20, 300)
-            local w = size
-            local h = size * 1.8
+						local hppercent = hum.Health / hum.MaxHealth
+						data.healthbar.From = bottomleft + Vector2.new(-6, 0)
+						data.healthbar.To = bottomleft + Vector2.new(-6, -h * hppercent)
+						data.healthbar.Color = hum.Health <= (hum.MaxHealth / 2) and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+						data.healthbar.Visible = true
 
-            local topLeft = Vector2.new(pos.X - w/2, pos.Y - h/2)
-            local topRight = Vector2.new(pos.X + w/2, pos.Y - h/2)
-            local bottomLeft = Vector2.new(pos.X - w/2, pos.Y + h/2)
-            local bottomRight = Vector2.new(pos.X + w/2, pos.Y + h/2)
+						data.name.Text = player.DisplayName
+						data.name.Position = Vector2.new(pos.X, topleft.Y - 16)
+						data.name.Color = color
+						data.name.Visible = true
 
-            local len = w * 0.25
-            local c = data.Corners
-
-            c[1].From = topLeft;     c[1].To = topLeft + Vector2.new(len, 0)
-            c[2].From = topLeft;     c[2].To = topLeft + Vector2.new(0, len)
-            c[3].From = topRight;    c[3].To = topRight - Vector2.new(len, 0)
-            c[4].From = topRight;    c[4].To = topRight + Vector2.new(0, len)
-            c[5].From = bottomLeft;  c[5].To = bottomLeft + Vector2.new(len, 0)
-            c[6].From = bottomLeft;  c[6].To = bottomLeft + Vector2.new(0, -len)
-            c[7].From = bottomRight; c[7].To = bottomRight - Vector2.new(len, 0)
-            c[8].From = bottomRight; c[8].To = bottomRight - Vector2.new(0, len)
-
-            for _, ln in ipairs(c) do
-                ln.Color = color
-                ln.Visible = true
-            end
-
-            local hpPercent = hum.Health / hum.MaxHealth
-            local barHeight = h * hpPercent
-            local barColor = hum.Health <= (hum.MaxHealth / 2)
-                and Color3.fromRGB(255,0,0)
-                or Color3.fromRGB(0,255,0)
-
-            data.HealthBar.From = bottomLeft + Vector2.new(-6, 0)
-            data.HealthBar.To   = bottomLeft + Vector2.new(-6, -barHeight)
-            data.HealthBar.Color = barColor
-            data.HealthBar.Visible = true
-
-            data.Name.Text = player.DisplayName
-            data.Name.Position = Vector2.new(pos.X, topLeft.Y - 16)
-            data.Name.Color = color
-            data.Name.Visible = true
-
-            data.Distance.Text = math.floor(distance).."m"
-            data.Distance.Position = Vector2.new(pos.X, bottomLeft.Y + 5)
-            data.Distance.Color = color
-            data.Distance.Visible = true
-        end
-    end)
+						data.distance.Text = math.floor(mag) .. "m"
+						data.distance.Position = Vector2.new(pos.X, bottomleft.Y + 5)
+						data.distance.Color = color
+						data.distance.Visible = true
+					else
+						updatevisibility(data, false)
+					end
+				else
+					updatevisibility(data, false)
+				end
+			end
+		end
+	end)
 end
 
-local function StopESP()
-    if connection then
-        connection:Disconnect()
-        connection = nil
-    end
-    for _, data in pairs(ESP) do
-        data.Name.Visible = false
-        data.Distance.Visible = false
-        data.HealthBar.Visible = false
-        for _, c in ipairs(data.Corners) do c.Visible = false end
-    end
+local function stopesp()
+	if connection then connection:Disconnect() connection = nil end
+	for _, data in pairs(esp) do updatevisibility(data, false) end
 end
 
-local ToggleESP = ESPBox:AddToggle("PlayersESP", {
-    Text = "Players",
-    Default = false,
-    Callback = function(state)
-        if state then
-            StartESP()
-        else
-            StopESP()
-        end
-    end,
+ESPBox:AddToggle("PlayersESP", {
+	Text = "Players",
+	Default = false,
+	Callback = function(state)
+		if state then startesp() else stopesp() end
+	end,
 })
 
 local replicatedstorage = game:GetService("ReplicatedStorage")
@@ -566,114 +530,141 @@ local KillerSprintSlider=PlayerBox:AddSlider("KillerSprintSlider",{
     Callback=function(v) killerSprintSpeed=v end
 })
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
+local players = game:GetService("Players")
+local runservice = game:GetService("RunService")
+local replicatedstorage = game:GetService("ReplicatedStorage")
+local workspace = game:GetService("Workspace")
+local userinputservice = game:GetService("UserInputService")
 
-local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
-local RenderConnection
-local CharacterConnection
+local localplayer = players.LocalPlayer
+local camera = workspace.CurrentCamera
+local renderconnection
+local characterconnection
+local inputconnection
 
-local Keywords = {"liverblow", "corrodedwave", "slash", "spear", "shotgun", "syringe", "flloop", "m1", "m1-1", "m1-2", "m2", "sand", "m11", "m12", "m13", "grab"}
-local KeywordIds = {}
+local keywords = {"liverblow", "corrodedwave", "slash", "spear", "shotgun", "syringe", "flloop", "m1", "m1-1", "m1-2", "m2", "sand", "m11", "m12", "m13", "grab"}
+local keywordids = {}
+local locktarget = nil
+local islockonactive = false
+local togglestate = false
 
-local function CollectIds(Folder)
-    for _, Child in ipairs(Folder:GetChildren()) do
-        if Child:IsA("Animation") then
-            local Name = Child.Name:lower()
-            for _, Key in ipairs(Keywords) do
-                if Name == Key then
-                    table.insert(KeywordIds, Child.AnimationId)
-                end
-            end
-        end
-        if #Child:GetChildren() > 0 then
-            CollectIds(Child)
-        end
-    end
+local function collectids(folder)
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:IsA("Animation") then
+			local name = child.Name:lower()
+			for _, key in ipairs(keywords) do
+				if name == key then
+					table.insert(keywordids, child.AnimationId)
+				end
+			end
+		end
+		if #child:GetChildren() > 0 then
+			collectids(child)
+		end
+	end
 end
 
-CollectIds(ReplicatedStorage)
+collectids(replicatedstorage)
 
-local function GetNearestTarget(Origin)
-    local Hrp = Origin:FindFirstChild("HumanoidRootPart")
-    if not Hrp then return nil end
-    
-    local Survivors = Workspace:FindFirstChild("survivors")
-    local Killers = Workspace:FindFirstChild("killers")
-    
-    if not Survivors or not Killers then return nil end
+local function getnearesttarget(origin)
+	local hrp = origin:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+	local survivors = workspace:FindFirstChild("survivors")
+	local killers = workspace:FindFirstChild("killers")
+	if not survivors or not killers then return nil end
 
-    local TargetContainer = Origin:IsDescendantOf(Survivors) and Killers or Survivors
-    local Closest, Shortest = nil, math.huge
-    
-    for _, Target in ipairs(TargetContainer:GetChildren()) do
-        local Thrp = Target:FindFirstChild("HumanoidRootPart")
-        local Health = Target:FindFirstChildOfClass("Humanoid")
-        if Thrp and Health and Health.Health > 0 then
-            local Distance = (Thrp.Position - Hrp.Position).Magnitude
-            if Distance < Shortest then
-                Shortest = Distance
-                Closest = Target
-            end
-        end
-    end
-    return Closest
+	local targetcontainer = origin:IsDescendantOf(survivors) and killers or survivors
+	local closest, shortest = nil, math.huge
+	for _, target in ipairs(targetcontainer:GetChildren()) do
+		local thrp = target:FindFirstChild("HumanoidRootPart")
+		local health = target:FindFirstChildOfClass("Humanoid")
+		if thrp and health and health.Health > 0 then
+			local distance = (thrp.Position - hrp.Position).Magnitude
+			if distance < shortest then
+				shortest = distance
+				closest = target
+			end
+		end
+	end
+	return closest
 end
 
-local function IsAttackPlaying(Humanoid)
-    for _, Track in ipairs(Humanoid:GetPlayingAnimationTracks()) do
-        for _, Id in ipairs(KeywordIds) do
-            if Track.Animation.AnimationId == Id then
-                return true
-            end
-        end
-    end
-    return false
+local function isattackplaying(humanoid)
+	for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+		for _, id in ipairs(keywordids) do
+			if track.Animation.AnimationId == id then
+				return true
+			end
+		end
+	end
+	return false
 end
 
-local function UpdateCameraRotation(Character)
-    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
-    if not Humanoid or not IsAttackPlaying(Humanoid) then return end
-    
-    local Target = GetNearestTarget(Character)
-    if not Target then return end
-    
-    local Thrp = Target:FindFirstChild("HumanoidRootPart")
-    if not Thrp then return end
+local function updatecamera(character)
+	if not character or not character.Parent then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
 
-    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, Thrp.Position)
+	local target = nil
+
+	if islockonactive and locktarget and locktarget.Parent and locktarget:FindFirstChild("Humanoid") and locktarget.Humanoid.Health > 0 then
+		target = locktarget
+	elseif isattackplaying(humanoid) then
+		target = getnearesttarget(character)
+	end
+
+	if target then
+		local thrp = target:FindFirstChild("HumanoidRootPart")
+		if thrp then
+			camera.CFrame = CFrame.lookAt(camera.CFrame.Position, thrp.Position)
+		end
+	end
 end
 
-local function StartCameraLock(Character)
-    if RenderConnection then RenderConnection:Disconnect() end
-    RenderConnection = RunService.RenderStepped:Connect(function()
-        if not Character or not Character.Parent then 
-            RenderConnection:Disconnect() 
-            return 
-        end
-        UpdateCameraRotation(Character)
-    end)
+local function handleinput(input, processed)
+	if processed or not togglestate then return end
+	if input.KeyCode == Enum.KeyCode.Z then
+		local char = localplayer.Character
+		if char and char:IsDescendantOf(workspace:FindFirstChild("killers")) then
+			islockonactive = not islockonactive
+			if islockonactive then
+				locktarget = getnearesttarget(char)
+				if not locktarget then islockonactive = false end
+			else
+				locktarget = nil
+			end
+		end
+	end
 end
 
-local function StopCameraLock()
-    if RenderConnection then RenderConnection:Disconnect() RenderConnection = nil end
-    if CharacterConnection then CharacterConnection:Disconnect() CharacterConnection = nil end
+local function startsystem(character)
+	if renderconnection then renderconnection:Disconnect() end
+	renderconnection = runservice.RenderStepped:Connect(function()
+		updatecamera(character)
+	end)
+end
+
+local function stopsystem()
+	if renderconnection then renderconnection:Disconnect() renderconnection = nil end
+	if characterconnection then characterconnection:Disconnect() characterconnection = nil end
+	if inputconnection then inputconnection:Disconnect() inputconnection = nil end
+	islockonactive = false
+	locktarget = nil
 end
 
 AimbotBox:AddToggle("camrotate", {
-    Text = "Survivor & Killer",
-    Default = false,
-    Callback = function(State)
-        if State then
-            if LocalPlayer.Character then StartCameraLock(LocalPlayer.Character) end
-            CharacterConnection = LocalPlayer.CharacterAdded:Connect(StartCameraLock)
-        else
-            StopCameraLock()
-        end
-    end,
+	Text = "Survivor & Killer",
+	Default = false,
+	Callback = function(state)
+		togglestate = state
+		if state then
+			if localplayer.Character then startsystem(localplayer.Character) end
+			characterconnection = localplayer.CharacterAdded:Connect(startsystem)
+			inputconnection = userinputservice.InputBegan:Connect(handleinput)
+		else
+			stopsystem()
+		end
+	end,
 })
 
 local players = game:GetService("Players")
