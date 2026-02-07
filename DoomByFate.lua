@@ -426,35 +426,29 @@ local LocalPlayer = Players.LocalPlayer
 
 local HigherSightEnabled = false
 local TargetZoom = 27
-local DefaultMin = 0.5
 local DefaultMax = 10
+local ConstantMin = 0.5
 
 local function MaintainZoom()
-	if HigherSightEnabled then
-		if LocalPlayer.CameraMaxZoomDistance ~= TargetZoom then
-			LocalPlayer.CameraMaxZoomDistance = TargetZoom
-		end
-		if LocalPlayer.CameraMinZoomDistance ~= TargetZoom then
-			LocalPlayer.CameraMinZoomDistance = TargetZoom
-		end
-	else
-		if LocalPlayer.CameraMaxZoomDistance ~= DefaultMax then
-			LocalPlayer.CameraMaxZoomDistance = DefaultMax
-		end
-		if LocalPlayer.CameraMinZoomDistance ~= DefaultMin then
-			LocalPlayer.CameraMinZoomDistance = DefaultMin
-		end
-	end
+    local CurrentMax = HigherSightEnabled and TargetZoom or DefaultMax
+    
+    if LocalPlayer.CameraMaxZoomDistance ~= CurrentMax then
+        LocalPlayer.CameraMaxZoomDistance = CurrentMax
+    end
+    
+    if LocalPlayer.CameraMinZoomDistance ~= ConstantMin then
+        LocalPlayer.CameraMinZoomDistance = ConstantMin
+    end
 end
 
 RunService.RenderStepped:Connect(MaintainZoom)
 
 local HigherSightToggle = EffectsBox:AddToggle("HigherSightOption", {
-	Text = "Higher Sight View",
-	Default = false,
-	Callback = function(State)
-		HigherSightEnabled = State
-	end,
+    Text = "Higher Sight View",
+    Default = false,
+    Callback = function(State)
+        HigherSightEnabled = State
+    end,
 })
 
 PlayerTab = Window:AddTab("Player", "users")
@@ -575,117 +569,111 @@ local KillerSprintSlider=PlayerBox:AddSlider("KillerSprintSlider",{
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
 local RenderConnection
 local CharacterConnection
 
-local Keywords = {"liverblow", "corrodedwave", "slash", "spear", "shotgun", "syringe", "flloop", "m1", "m1-1", "m1-2", "m2", "sand"}
+local Keywords = {"liverblow", "corrodedwave", "slash", "spear", "shotgun", "syringe", "flloop", "m1", "m1-1", "m1-2", "m2", "sand", "m11", "m12", "m13", "grab"}
 local KeywordIds = {}
 
-local RotationSpeedSlider = AimbotBox:AddSlider("RotationSmoothing", {
-	Text = "Rotation Speed",
-	Default = 0.15,
-	Min = 0.01,
-	Max = 1,
-	Rounding = 2,
-})
-
 local function CollectIds(Folder)
-	for _, Child in ipairs(Folder:GetChildren()) do
-		if Child:IsA("Animation") then
-			local Name = Child.Name:lower()
-			for _, Key in ipairs(Keywords) do
-				if Name == Key then
-					table.insert(KeywordIds, Child.AnimationId)
-				end
-			end
-		end
-		if #Child:GetChildren() > 0 then
-			CollectIds(Child)
-		end
-	end
+    for _, Child in ipairs(Folder:GetChildren()) do
+        if Child:IsA("Animation") then
+            local Name = Child.Name:lower()
+            for _, Key in ipairs(Keywords) do
+                if Name == Key then
+                    table.insert(KeywordIds, Child.AnimationId)
+                end
+            end
+        end
+        if #Child:GetChildren() > 0 then
+            CollectIds(Child)
+        end
+    end
 end
 
 CollectIds(ReplicatedStorage)
 
-local function GetNearestTarget(Origin, Container)
-	local Hrp = Origin:FindFirstChild("HumanoidRootPart")
-	if not Hrp then return nil end
-	
-	local Closest, Shortest = nil, math.huge
-	for _, Target in ipairs(Container:GetChildren()) do
-		local Thrp = Target:FindFirstChild("HumanoidRootPart")
-		if Thrp then
-			local Distance = (Thrp.Position - Hrp.Position).Magnitude
-			if Distance < Shortest then
-				Shortest = Distance
-				closest = Target
-			end
-		end
-	end
-	return closest
+local function GetNearestTarget(Origin)
+    local Hrp = Origin:FindFirstChild("HumanoidRootPart")
+    if not Hrp then return nil end
+    
+    local Survivors = Workspace:FindFirstChild("survivors")
+    local Killers = Workspace:FindFirstChild("killers")
+    
+    if not Survivors or not Killers then return nil end
+
+    local TargetContainer = Origin:IsDescendantOf(Survivors) and Killers or Survivors
+    local Closest, Shortest = nil, math.huge
+    
+    for _, Target in ipairs(TargetContainer:GetChildren()) do
+        local Thrp = Target:FindFirstChild("HumanoidRootPart")
+        local Health = Target:FindFirstChildOfClass("Humanoid")
+        if Thrp and Health and Health.Health > 0 then
+            local Distance = (Thrp.Position - Hrp.Position).Magnitude
+            if Distance < Shortest then
+                Shortest = Distance
+                Closest = Target
+            end
+        end
+    end
+    return Closest
 end
 
 local function IsAttackPlaying(Humanoid)
-	for _, Track in ipairs(Humanoid:GetPlayingAnimationTracks()) do
-		for _, Id in ipairs(KeywordIds) do
-			if Track.Animation.AnimationId == Id then
-				return true
-			end
-		end
-	end
-	return false
+    for _, Track in ipairs(Humanoid:GetPlayingAnimationTracks()) do
+        for _, Id in ipairs(KeywordIds) do
+            if Track.Animation.AnimationId == Id then
+                return true
+            end
+        end
+    end
+    return false
 end
 
-local function FaceTargetSmoothly(Character)
-	local Humanoid = Character:FindFirstChildOfClass("Humanoid")
-	local Hrp = Character:FindFirstChild("HumanoidRootPart")
-	if not Humanoid or not Hrp then return end
-	if not IsAttackPlaying(Humanoid) then return end
-	
-	local TargetContainer = Character:IsDescendantOf(workspace.survivors) and workspace.killers or workspace.survivors
-	local Target = GetNearestTarget(Character, TargetContainer)
-	if not Target then return end
-	
-	local Thrp = Target:FindFirstChild("HumanoidRootPart")
-	if not Thrp then return end
-	
-	local TargetLook = Vector3.new(Thrp.Position.X, Hrp.Position.Y, Thrp.Position.Z)
-	local TargetCFrame = CFrame.new(Hrp.Position, TargetLook)
-	
-	Hrp.CFrame = Hrp.CFrame:Lerp(TargetCFrame, RotationSpeedSlider.Value)
+local function UpdateCameraRotation(Character)
+    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    if not Humanoid or not IsAttackPlaying(Humanoid) then return end
+    
+    local Target = GetNearestTarget(Character)
+    if not Target then return end
+    
+    local Thrp = Target:FindFirstChild("HumanoidRootPart")
+    if not Thrp then return end
+
+    Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, Thrp.Position)
 end
 
-local function StartAutoRotate(Character)
-	if RenderConnection then RenderConnection:Disconnect() end
-	RenderConnection = RunService.RenderStepped:Connect(function()
-		if not Character:IsDescendantOf(workspace) then return end
-		FaceTargetSmoothly(Character)
-	end)
+local function StartCameraLock(Character)
+    if RenderConnection then RenderConnection:Disconnect() end
+    RenderConnection = RunService.RenderStepped:Connect(function()
+        if not Character or not Character.Parent then 
+            RenderConnection:Disconnect() 
+            return 
+        end
+        UpdateCameraRotation(Character)
+    end)
 end
 
-local function StopAutoRotate()
-	if RenderConnection then RenderConnection:Disconnect() RenderConnection = nil end
-	if CharacterConnection then CharacterConnection:Disconnect() CharacterConnection = nil end
+local function StopCameraLock()
+    if RenderConnection then RenderConnection:Disconnect() RenderConnection = nil end
+    if CharacterConnection then CharacterConnection:Disconnect() CharacterConnection = nil end
 end
 
-AimbotBox:AddToggle("autorotate", {
-	Text = "Survivor & Killer",
-	Default = false,
-	Callback = function(State)
-		if State then
-			if LocalPlayer.Character then
-				StartAutoRotate(LocalPlayer.Character)
-			end
-			if CharacterConnection then CharacterConnection:Disconnect() end
-			CharacterConnection = LocalPlayer.CharacterAdded:Connect(function(Char)
-				StartAutoRotate(Char)
-			end)
-		else
-			StopAutoRotate()
-		end
-	end,
+AimbotBox:AddToggle("camrotate", {
+    Text = "Survivor & Killer",
+    Default = false,
+    Callback = function(State)
+        if State then
+            if LocalPlayer.Character then StartCameraLock(LocalPlayer.Character) end
+            CharacterConnection = LocalPlayer.CharacterAdded:Connect(StartCameraLock)
+        else
+            StopCameraLock()
+        end
+    end,
 })
 
 local players = game:GetService("Players")
